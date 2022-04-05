@@ -1,0 +1,347 @@
+---
+title: "Tarea de Supervivencia"
+author:
+  - Zuri Montalar Mendoza
+  - Caterina Olaya Paparsenos Fernández
+date: "16/11/2020"
+output:
+  pdf_document: default
+  md_document:
+    preserve_yaml: false
+# header-includes:
+subtitle: Análisis del banco de datos *linfoma.dat*
+editor_options:
+  chunk_output_type: console
+---
+
+\renewcommand{\figurename}{\textbf{Figura}}
+\renewcommand{\tablename}{\textbf{Tabla}}
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(eval=TRUE,echo=FALSE,
+    warning=FALSE, error=FALSE,message = FALSE,comment = " ")
+```
+
+<div style="text-align: justify">
+
+```{r paquetes}
+library(readr)
+library(survival)
+library(ggplot2)
+library(ggpubr)
+library(survminer)
+library(rms)
+```
+
+
+En un estudio realizado por Dahlborg y colaboradores y publicado en 1996, se analizó el efecto que tenía la quimioterapia como método terapéutico contra el linfoma primario del sistema nervioso central. El objetivo principal de este trabajo es comparar los pacientes que se sometieron o no a radiación craneal previa mediante el tiempo de supervivencia (en años) desde que se les diagnosticó por primera vez el linfoma (1er BBBD) hasta su fallecimiento. Para ello, realizaremos un análisis de supervivencia, considerando primero las variables explicativas por separado (a través de curvas de Kaplan-Meier), y a continuación propondremos un modelo de Cox que tenga en cuenta todas las variables. En el banco de datos que disponemos hay un total de 6 variables, 4 de las cuales son factores.
+
+# 1. Lectura y análisis descriptivo del banco de datos
+
+```{r}
+#datos<-read_table2("C:/Users/Caterina.DESKTOP-T5E1RQU/Desktop/modulo_especialización_master/Tareas/Tarea3_Supervivencia/linfoma.dat")
+setwd("~/BIOESTADÍSTICA máster/ESPECIALIZACIÓN máster/analisis supervivencia/tarea supervivencia")
+datos<-read_table2("linfoma.dat")
+names(datos)<-c("B3TODEATH","STATUS","KPS.PRE.","GROUP","SEX","AGE60")
+datos$STATUS<-as.factor(datos$STATUS)
+datos$GROUP<-as.factor(datos$GROUP)
+datos$SEX<-as.factor(datos$SEX)
+datos$AGE60<-as.factor(datos$AGE60)
+# str(datos)
+summary(datos)
+datos$STATUS<-as.numeric(datos$STATUS)-1
+```
+
+*B3TODEATH* es nuestra variable respuesta y es cuantitativa. Se trata del tiempo hasta la muerte desde la primera detección del linfoma en la barrera hematoencefálica (BBBD), en años. El máximo tiempo detectado es inferior a 12 años, y el tiempo mediano es de año y medio.
+
+La otra variable cuantitativa es *KPS.PRE.*, y hace referencia a la Escala Karnofsky del paciente previa al primer BBDD. Esta escala consiste en una medida del estado funcional en cáncer, y toma posibles valores entre 0 y 100 (0 indicaría muerte, frente a 100, que sería un estado normal, sin quejas ni evidencias de enfermedades). El valor mínimo en nuestro banco de datos del KPS es 40.
+
+La variable *STATUS* tiene valor "0" si el paciente está vivo, y "1" si ha fallecido, por lo que, a su vez, nos indica si para cada observación, estamos o no frente a datos censurados, pues una vez finalizado el estudio, los pacientes que están vivos tienen en realidad mayor tiempo hasta la muerte desde el primer BBBD del que se ha registrado. Tenemos entonces 22 observaciones con datos censurados, y 36 con datos completos.
+
+La variable *GROUP* tiene valor "0" si no ha habido radiación previa con respecto al primer procedimiento de BBBD para administrar la quimioterapia, y tenemos 39 pacientes en este grupo; mientras que un valor de "1" indica que sí ha habido radiación previa, habiendo 19 pacientes en este grupo.
+
+También tenemos variables de sexo y edad, de forma que en nuestro estudio 38 de los pacientes son hombres y 20 son mujeres; además de que 21 de ellos tenían menos de 60 años cuando se les detectó por primera vez BBBD, y 37 de ellos superaban esa edad.
+
+
+En la figura 1 vemos cómo se distribuyen nuestros datos de la Escala Karnofsky con respecto al tiempo hasta la muerte; tenemos que los valores más inferiores de la variable de la escala corresponden a los tiempos hasta la muerte más bajos, lo que no nos sorprende, pues esperaríamos que personas con peor estado funcional, fallezcan antes.
+
+
+```{r fig.width=5,fig.height=3,fig.align="center",fig.cap= paste("Distribución de datos de la Escala Karnofsky con respecto al tiempo")}
+plot(datos$B3TODEATH,datos$KPS.PRE.,ylab="Escala Karnofsky",
+     xlab="Tiempo hasta la muerte (en años)")
+```
+
+
+
+```{r fig.width=5,fig.height=3.7,fig.align="center",fig.cap= paste("Diagramas de caja y bigotes del tiempo hasta la muerte y de la Escala Karnofsky")}
+par(mfrow=c(1,2))
+boxplot(datos$B3TODEATH,main=colnames(datos)[1])
+boxplot(datos$KPS.PRE.,main=colnames(datos)[3])
+```
+
+Al representar los diagramas de cajas y bigotes del tiempo hasta la muerte y de la Escala Karnofsky, en la figura 2, vemos que en el primer caso, se dan algunos outliers superiores y, en el segundo, un largo bigote inferior. Con todo, ninguna de las dos variables parece que tenga una distribución simétrica.
+
+En la figura 3 mostramos los diagramas de cajas y bigotes del tiempo hasta la muerte según el status, grupo, sexo y edad, y observamos que la mediana del tiempo hasta la muerte de las personas vivas es superior al tercer cuartil de las personas que han fallecido, como cabía esperar. Ocurre lo mismo con la variable del grupo, de forma que podríamos esperar que las personas que no tuvieron radiación previa tienen mayor tiempo hasta la muerte (sobreviven durante más tiempo) que las que no la tuvieron. Sin embargo, en el caso del sexo y del grupo de edad no se perciben directamente diferencias tan claras en cuanto al tiempo de supervivencia.
+
+```{r fig.width=6,fig.height=4,fig.align="center",fig.cap= paste("Diagramas de cajas y bigotes del tiempo de supervivencia por grupos, sexo y edad")}
+# cajas y bigotes del tiempo de supervivencia por grupos, sexo y edad
+par(mfrow=c(1,3))
+boxplot(B3TODEATH~GROUP,data=datos)
+boxplot(B3TODEATH~SEX,data=datos)
+boxplot(B3TODEATH~AGE60,data=datos)
+par(mfrow=c(1,1))
+```
+
+
+En la figura 4, cada segmento corresponde a un paciente y su longitud es el tiempo durante el que se ha observado. Los puntos rojos muestran que esos pacientes han fallecido, y por tanto los puntos blancos nos indican para qué pacientes tenemos datos censurados.
+
+```{r fig.width=5,fig.height=3.5,fig.align="center",fig.cap= paste("Swimmer plot")}
+# swimmer plot 
+plot(datos$B3TODEATH,1:dim(datos)[1],xlim=c(0,12),
+     xlab='Tiempo hasta la muerte (en años)', ylab='Pacientes')
+points(datos$B3TODEATH[datos$STATUS==1],(1:dim(datos)[1])[datos$STATUS==1],
+       pch=19,col='RED')
+for (i in 1:dim(datos)[1]) lines(c(0,datos$B3TODEATH[i]),c(i,i))
+```
+
+\newpage
+
+# 2. Análisis de Kaplan-Meier y comparación de curvas de supervivencia
+
+A continuación, realizamos un análisis de Kaplan-Meier, así como comparaciones por grupos, sexos edad, y podemos visualizar las curvas de supervivencia de los mismos en las figuras 5, 6 y 7, respectivamente.
+
+
+```{r fig.width=4,fig.height=2.5,fig.align="center",fig.cap= paste("Curvas de Kaplan-Meier por grupo"), results="hide"}
+# por grupo
+km.grupo<-survfit(Surv(B3TODEATH,STATUS)~GROUP,data=datos) 
+ggsurvplot(km.grupo)
+# summary(km.grupo)
+survdiff(Surv(B3TODEATH,STATUS)~GROUP, data=datos) # Test log-rank
+survdiff(Surv(B3TODEATH,STATUS)~GROUP, data=datos,rho=1) # Test de Peto
+```
+
+Con un p-valor de 0.002, al realizar el Test log-rank (o Mantel-Haenszel), rechazamos la hipótesis nula en la que la supervivencia por grupos es la misma, considerando entonces que sí se producen diferencias significativas según si los pacientes recibieron o no radiación previa. Con el test de Peto, que es muy similar al test de Breslow, tenemos un p-valor de 0.005, lo que nos lleva a las mismas conclusiones, rechazando igualmente la hipótesis nula, considerando un nivel de significación del 5% ($\alpha=0.05$).
+
+
+```{r fig.width=4,fig.height=2.5,fig.align="center",fig.cap= paste("Curvas de Kaplan-Meier por sexo"), results="hide"}
+# por sexo
+km.sexo<-survfit(Surv(B3TODEATH,STATUS)~SEX,data=datos) 
+ggsurvplot(km.sexo)
+# summary(km.sexo)
+survdiff(Surv(B3TODEATH,STATUS)~SEX, data=datos) # Test log-rank
+survdiff(Surv(B3TODEATH,STATUS)~SEX, data=datos,rho=1) # Test de Peto
+```
+
+Al realizar la comparación por sexo, con p-valores de 0.3 y 0.2 en los tests de log-rank y de Peto, respectivamente, no tenemos evidencia estadística suficiente para considerar que hay diferencias significativas entre la supervivencia de hombres y mujeres.
+
+
+```{r fig.width=4,fig.height=2.5,fig.align="center",fig.cap= paste("Curvas de Kaplan-Meier por edad"), results="hide"}
+# por edad
+km.edad<-survfit(Surv(B3TODEATH,STATUS)~AGE60,data=datos) 
+ggsurvplot(km.edad)
+# summary(km.edad)
+survdiff(Surv(B3TODEATH,STATUS)~AGE60, data=datos) # Test log-rank
+survdiff(Surv(B3TODEATH,STATUS)~AGE60, data=datos,rho=1) # Test de Peto
+```
+
+Con un p-valor de 0.6 en el test de log-rank, además de un p-valor de 0.5 en el de Peto, tampoco tenemos evidencia estadística suficiente para considerar que hay diferencias significativas entre la supervivencia de personas mayores y menores de 60 años. 
+
+
+# 3. Ajuste de un modelo de Cox
+
+El método de Kaplan-Meier para estimar la función de supervivencia es efectivo en el caso que la variable predictora sea categórica. Sin embargo, en nuestros datos tenemos una variable cuantitativa (*KPS.PRE.*) que también sería interesante utilizar. Además, con Kaplan-Meier únicamente podemos tener en cuenta simultáneamente una variable explicativa, siendo que es de nuestro interés poder estudiar cómo afecta el conjunto de variables que disponemos (así como sus posibles interacciones) en la supervivencia. Es por ello que realizamos de nuevo el análisis utilizando otro método conocido como *Modelo de Riesgos Proporcionales de Cox*, el cual permite establecer una relación de proporcionalidad directa entre la variable respuesta y un conjunto de variables explicativas que pueden ser tanto cuantitativas como categóricas.
+
+El propósito de este método es evaluar el impacto de las covariables sobre la supervivencia de los pacientes con BBBD. En nuestro caso, la función de riesgo tiene la siguiente expresión, donde $t$ es el tiempo; $h(t)$ es la función de riesgo explicado por el modelo; $h_{0}(t)$ se conoce como riesgo base; $\beta_{n}$ son los coeficientes estimados y $x_{n}$ son las variables explicativas:
+
+$$h(t)= h_{0}(t)e^{\beta_{1}KPS.PRE+\beta_{2}SEX+\beta_{3}AGE60+\beta_{4}GROUP}$$
+
+Para encontrar el modelo que mejor se ajusta a los datos, hemos probado distintos modelos con diferentes combinaciones de las variables. Durante el proceso de modelización hemos utilizado distintas transformaciones de la variable $KPS.PRE.$, como por ejemplo $KPS.PRE.^{2}$, $\log_{2}(KPS.PRE.)$ y $\log(KPS.PRE.)$. Vemos que en todos los modelos probados (con las distintas transformaciones y sin ellas), han resultado ser significativos todos los coeficientes de las variables categóricas ( _p-valor<0.05_ ) y por tanto no se puede rechazar ninguna de ellas. Sin embargo, consideramos finalmente la variable sin transformar ya que su modelo es el que mejor se ajusta a los datos.
+
+Una vez decidido que no realizamos ninguna transformación, nos planteamos partir de un modelo de Cox que contiene todas las interacciones posibles entre las variables dos a dos, y realizamos una búsqueda del mejor modelo con ayuda de la función `step()` del paquete *stats*. Por tanto, nos hemos basado en los coeficientes de información de Akaike (*AIC*) y en el *test anova* para comparar las deviance's.
+
+```{r , results="hide"}
+# modelo completo interacciones
+ajuste.muchas<-coxph(Surv(B3TODEATH, STATUS)~(KPS.PRE. + GROUP + 
+    SEX + AGE60)^2, data=datos)
+# step para selección de variables
+ajuste.pocas<-step(ajuste.muchas, direction="both",trace=0) 
+ajuste.pocas$anova
+print(ajuste.pocas)
+summary(ajuste.pocas)
+```
+
+<!-- En cuanto a las interacciones entre las variables, solo la interacción entre ser mujer y haber presentado por primera vez BBBD después de los 60 años ($AGE60=1$) es significativa, ya que tiene un p-valor=0.012. -->
+
+El modelo que se propone como el mejor resultó ser aquel que considera todas las variables sin transformaciones y la interacción entre el sexo y la edad. Su valores para la deviance residual y el Akaike son 223.5 y 233.5, respectivamente. Además, en este modelo la concordance es de 0.76, lo cual es indicio de ser un buen ajuste.
+
+También probamos manualmente a quitar variables una a una, empezando por las que tenían coeficientes asociados con mayor p-valor, pero en ningún caso mejoramos el modelo al comparar estos con el propuesto por la función `step()`.
+
+
+```{r}
+modelo_final<-coxph(formula = Surv(B3TODEATH, STATUS) ~ KPS.PRE. + GROUP + 
+    SEX + AGE60 + SEX:AGE60, data = datos)
+# AIC(modelo_final)
+# -2*modelo_final$loglik[2]# deviance
+```
+
+En la figura 8 se muestran las tasas de riesgo para el modelo seleccionado. Se puede observar que el p-valor para el test global es menor a 0.05, lo que indica que la estimación  del modelo de Cox es correcta. Sorprendentemente, el riesgo de la variable $KPS.PRE$ incluye el valor 1 indicando así que esta no es informativa. Por el contrario, las otras 3 variables explicativas son informativas ya que sus riesgos no incluyen el valor 1. También  vemos que el riesgo relativo de aquellas personas que se han sometido previamente a radiación ($GROUP=1$) está entre 1.5 y 6.7; que las mujeres ($SEX=1$) tienen un riesgo entre 0.031 y 0.48, mientras que las personas que presentaron por primera vez linfomas después de los 60 tienen un riesgo relativo entre 0.14 y 0.82.
+
+```{r fig.width=5,fig.height=5,fig.align="center",fig.cap= paste("Tasas de riesgo del modelo definitivo")}
+# Representación gráfica de las tasas de riesgo del modelo definitivo.
+ggforest(modelo_final, datos)
+```
+
+Al comprobar la calidad del modelo ajustado según su deviance se obtiene un p-valor=0.95 indicando así que el modelo en cuestión es mejor que el considera todas las interacciones posibles dos a dos, y por tanto consideramos mejor el modelo más sencillo.
+
+```{r , results="hide"}
+# Comparación del modelo obtenido con el primer modelo propuesto
+lambda <- -2*ajuste.pocas$loglik[2] + 2*ajuste.muchas$loglik[2]
+1-pchisq(lambda,(length(ajuste.muchas$coef)-length(ajuste.pocas$coef))) #0.9489222
+```
+
+
+# 4. Análisis de residuos del modelo definitivo
+<!-- 5. Análisis de residuos del modelo definitivo. ¿Es adecuado? -->
+
+Una vez seleccionado el mejor modelo, nos disponemos a estudiar si es adecuado. Para ello, nos haremos servir de los residuos del mismo:
+
+En primer lugar, estudiamos si los riesgos son o no proporcionales, pues de no serlo, tendríamos covariables que interactúan con el tiempo y no podríamos utilizar un modelo de Cox tal como hemos hecho. Para ello, realizamos el Test de Therneau utilizando los residuos de Schoenfeld escalados, mediante la función `cox.zph()` del paquete *survival*. Obtenemos que los p-valores de todos los coeficientes son superiores a 0.05 (el nivel de significación escogido para todo el trabajo), por lo que consideramos que los riesgos son proporcionales y no hace falta realizar ninguna estratificación en nuestras variables. 
+
+
+También podemos visualizar esto mismo en la figura 9, donde no se observa ningún patrón de distribución en los residuos que sugiera una falta de ajuste del modelo. Esto significa que los residuos son independientes del tiempo de supervivencia.
+
+
+```{r fig.width=6,fig.height=6,fig.align="center",fig.cap= paste("Residuos de Schoenfeld escalados: riesgos proporcionales"), results="hide"}
+# riesgos proporcionales?
+(thernau<-cox.zph(modelo_final)) # test de thernau
+par(mfrow=c(3,2))
+plot(thernau)
+```
+
+Tal como hemos comentado, nuestro modelo final no tiene transformaciones de las variables. Por tanto, no estudiamos la linealidad de las covariables.
+
+Para estudiar si tenemos observaciones influyentes, recurrimos a los residuos $dfbeta$, de forma que en la figura 10, los cambios grandes (es decir, los picos altos), nos hacen sospechar de posibles observaciones influyentes. Vemos entonces en la gráfica correspondiente al sexo, que las observaciones 15 y 22 tienen cambios en los coeficientes más elevados, en general, que el resto de observaciones; en el caso de la variable de la Escala Karnofsky son las observaciones 12 y 22; y en el caso de la variable grupo, destacaría la quinta observación, pero este análisis no parece muy concluyente.
+             
+                                                                    
+```{r fig.width=6,fig.height=2,fig.align="center",fig.cap= paste("Residuos dfbeta: observaciones influyentes")}
+# observaciones influyentes?
+res.dfbeta <- resid(modelo_final,type='dfbeta') # Medidas dfbeta
+par(mfrow=c(1,3))
+indice = 1:nrow(res.dfbeta)
+for (i in 1:3) plot(indice,res.dfbeta[,i],type='h', xlab='individuo',
+                    ylab=paste('cambio en el coeficiente',
+                               (names(modelo_final$coef))[i], sep = " "))
+```
+
+En cuanto a la detección de observaciones anómalas, utilizamos los residuos Deviance y, al representar los mismos sobre las puntuaciones de riesgo (figura 11), vemos que no hay ningún punto que se aleje demasiado de la horizontal que marca residuos nulos, estando prácticamente todos ellos dentro del intervalo (-2,2). Sin embargo, representando los residuos Deviance respecto al tiempo, vemos que en tanto que aumenta el tiempo, la mayoría de los residuos son negativos. Esto es indicio de estar sobreestimando la probabilidad de muerte, lo cual no nos sorprende debido a que tenemos menos datos en esos tiempos elevados, y por tanto en esa zona nuestro modelo es menos fiable.
+
+```{r fig.width=6,fig.height=3,fig.align="center",fig.cap= paste("Residuos deviance: outliers")}
+# observaciones anómalas (outliers)?
+par(mfrow=c(1,2))
+res.deviance <- resid(modelo_final,type='deviance') # Residuos deviance
+plot(modelo_final$linear,res.deviance,type='p',ylab='Residuos deviance',
+     xlab='Puntuaciones de riesgo'); abline(h=0,lty=2,col=2)
+plot(datos$B3TODEATH,res.deviance,type='p',ylab='Residuos deviance',
+     xlab='Tiempo'); abline(h=0,lty=2,col=2)
+```
+
+También cabe valorar si hay valores anómalos en las variables. Para ello, podemos utilizar los residuos de Schoenfeld o los parciales. A continuación, visualizamos estos últimos en la figura 12.
+
+```{r fig.cap= paste("Residuos parciales: valores anómalos en las covariables")}
+# valores anómalos en las covariables?
+res.partial <- resid(modelo_final,type='partial')
+tiempos <- as.numeric(rownames(res.partial))
+par(mfrow=c(2,2))
+for (i in 1:3) {
+  sm.res <- loess(res.partial[,i] ~ tiempos)
+  destip <- predict(sm.res,se=T)$se
+  plot(tiempos,res.partial[,i],xlab='Tiempos ordenados',type='p',
+       ylab=paste('Residuos parciales para',(names(modelo_final$coef))[i],
+                  sep = " "))
+  lines(tiempos,sm.res$fit)
+  lines(tiempos,sm.res$fit+2*destip,lty=2)
+  lines(tiempos,sm.res$fit-2*destip,lty=2)}
+par(mfrow=c(1,1))
+```
+
+Por último, valoramos si hay colinealidad recurriendo a la función `vif()` del paquete *rms*, que proporciona el factor de inflación de la varianza y, teniendo que es inferior a 5 en todos los casos, podemos considerar que no tenemos problema de colinealidad.
+
+```{r , results="hide"}
+# Problemas de colinealidad?
+vif(modelo_final)
+```
+
+Por tanto, nuestro modelo *modelo_final* cumple todas las validaciones necesarias.
+
+
+# 5. Descripción del mejor modelo
+
+Tras haber comparado varios modelos y haber analizado sus residuos obtenemos como mejor modelo el siguiente:
+
+$$h(t)= h_{0}(t)e^{-0.03\cdot KPS.PRE-2.11\cdot SEX-1.05\cdot AGE60+1.16\cdot GROUP+2.14\cdot  (GROUP*SEX)}$$
+
+A continuación se muestra la salida del *summary* para nuestro modelo, en el que se puede observar que todas las variables son significativas. También se muestran los valores de los coeficientes de la parte paramétrica del modelo y para el exponencial de los mismos.
+
+
+```{r}
+modelo_final<-coxph(formula = Surv(B3TODEATH, STATUS) ~ KPS.PRE. + GROUP + 
+    SEX + AGE60 + SEX:AGE60, data = datos)
+summary(modelo_final)
+```
+
+En primer lugar, se puede decir que el factor del *KPS.PRE.* es beneficioso (su riesgo relativo es inferior a 1) frente a la enfermedad, ya que si lo disminuimos en una unidad, aumentamos el riesgo ($exp(-coef)=1.03$). Esto era de esperar porque, por la propia definición de esa covariable, valores bajos de la misma indican peor estado funcional, y por tanto se espera una menor probabilidad de superviencia, un mayor riesgo. Sin embargo, vemos que el intervalo de confianza de este coeficiente es (0.95,0.99) que, siendo muy cercano a 1 (tal como ya veíamos en la figura 8), nos indica que la variable asociada, *KPS.PRE.*, no es informativa, por lo que esta covariable no afectará en gran medida a la supervivencia.
+
+Por otro lado, el hecho de ser mujer o ser mayor de 60 años cuando presentan por primera vez el BBBD, también es beneficioso frente al riesgo de muerte por los mismos motivos que antes, teniendo en este caso los valores de $exp(-coef)$ en ambos casos también mayores a la unidad. Entonces, abstraemos que las mujeres tienen menor riesgo que los hombres, y presentar la la enfermedad a avanzada edad es mejor que presentarla en edad joven.
+
+Por último, el hecho de haber estado sometido a radiación ($GROUP=1$) es perjudicial ya que su riesgo relativo es mayor a 1 ($exp(coef)=3.19$). Sorprendentemente, el factor más desfavorable de todos es ser la interacción de ser mujer y tener más de 60 años, pues su riesgo relativo es el más alto.
+
+
+Como consecuencia de lo anterior, esperamos que aquellas personas que presentan el linfoma en temprana edad o se han sometido anteriormente a algún tipo de radiación tienen menos tiempo hasta su muerte. Además, se espera que las mujeres sobrevivan más tiempo que los varones. A excepción de lo anterior es el caso de las mujeres que presentan el linfoma después de sus 60 años de edad, donde se espera que tengan el menor tiempo de supervivencia de todos.
+
+A continuación vamos a realizar una predicción para ver si nuestro modelo se ajusta bien.
+Estudiaremos todas las posibles combinaciones de personas fijando únicamente el valor de la Escala Karnofsky a 50, tal y como se muestra en la tabla 1.
+
+```{r }
+knitr::kable(datos.nuevos<-cbind.data.frame(expand.grid(KPS.PRE.=50,GROUP=c("0","1"),
+                                            SEX=c("0","1"),AGE60=c("0","1"))),
+             caption="Individuos para los que predecimos")
+```
+
+Para cada uno de los ocho individuos de la tabla anterior, la mediana de las predicciones 
+
+```{r}
+ajuste.nuevo <- survfit(modelo_final,newdata=datos.nuevos)
+```
+
+En la figura 13 se muestra la supervivencia de estos individuos. Vemos que la persona con mayor tiempo de supervivencia es el caso 3 (es decir, mujer joven sin radiación previa) mientras que la persona con menor tiempo de supervivencia es el caso 2 (hombre joven que sí estuvo sometido a radiación previa), hecho que era de esperar. Además, tal como se esperaba, las mujeres mayores de 60 años (casos 7 y 8) tienen baja probabilidad de supervivencia, de las cuales la menor la presenta el caso que se somete a radiación (caso 8).
+
+```{r fig.width=5,fig.height=3.5,fig.align="center",fig.cap= paste("Curvas de supervivencia- predicción")}
+ggsurvplot(survfit(modelo_final,newdata = datos.nuevos),
+           data = datos,conf.int = F)
+```
+
+
+
+A grandes rasgos, esta predicción sigue el patrón del modelo que hemos seleccionado aunque no coinciden los resultados por completo. Esto probablemente se deba a la gran varianza que tiene la base de datos con la que hemos trabajado. Si se utilizara este mismo modelo con otra base de datos que contenga mayor número de observaciones, menos variabilidad y casos censurados, probablemente se obtendrían mejores resultados al predecir nuevos casos.        
+
+
+# 6. Conclusiones
+
+
+Para estudiar la diferencia que existe entre los pacientes que presentan linfoma primario en su SNC y que se han sometido a radiación previa frente a aquellos que no se sometieron a radiación, se han realizado dos análisis de supervivencia diferentes: análisis no paramétrico de Kaplan-Meier y análisis semiparamétrico utilizando la regresión de Cox. Los resultados obtenidos por ambos modelos son similares, aunque este segundo permite realizar un análisis más completo, pues permite tener en cuenta varias variables explicativas simultáneamente.
+
+En primer lugar, no haber estado sometido a radiación previa tiene un efecto beneficioso frente al linfoma ya que se ha visto cómo esos pacientes tienen un mayor tiempo de vida. También se ha visto que la esperanza de vida de estos pacientes depende de la edad a la que presentaron el linfoma por primera vez. En concreto, el riesgo de morir antes en los pacientes jóvenes es mayor que el de los pacientes de tercera edad (mayores de 60 años). Finalmente, los pacientes de sexo femenino suelen tener mayor esperanza de vida que los varones excepto las mujeres que presentaron el linfoma después de los 60 años.
+
+En cuanto al valor de desempeño de Karnosky, se ha visto que no influye de manera significativa en la supervivencia de los pacientes.
+
+
+
+# 7. Anexo: código de R
+
+
+```{r ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE}
+
+```
+
+
+
